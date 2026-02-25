@@ -26,7 +26,8 @@ This project uses a heterogeneous Graph Neural Network to predict IC50 (drug eff
 │   └── preprocess_gdsc.py  # Convert GDSC Excel → PyTorch format
 │
 ├── training/               # Model training
-│   └── train.py            # Train GNN with early stopping
+│   ├── train.py            # Standard GNN training with early stopping
+│   └── train_active_learning.py  # Active learning training
 │
 ├── evaluation/             # Model evaluation
 │   ├── evaluate_model.py   # Evaluate on test cell lines
@@ -92,9 +93,15 @@ python preprocess_gdsc.py
 
 ### 4. Train Model
 
+**Standard Training:**
 ```bash
 cd training
 python train.py --epochs 100 --patience 15
+```
+
+**Active Learning Training (recommended for limited labeling budget):**
+```bash
+python train_active_learning.py --strategy hybrid --budget 5000 --batch-size 100
 ```
 
 ### 5. Predict Drugs for New Cell Line
@@ -124,6 +131,58 @@ curl -X POST http://localhost:5000/predict \
      -H "Content-Type: application/json" \
      -d '{"gene_expression": [0.1, 0.2, ...]}'
 ```
+
+## Active Learning
+
+Active learning reduces the number of expensive drug-cell experiments needed by intelligently selecting which pairs to test next.
+
+### Why Active Learning?
+
+- Drug screening is expensive (~$100-1000 per experiment)
+- Active learning can achieve same accuracy with **20-40% fewer experiments**
+- Prioritizes informative samples over random selection
+
+### Query Strategies
+
+| Strategy | Description | Best For |
+|----------|-------------|----------|
+| `random` | Baseline random sampling | Comparison |
+| `uncertainty` | MC Dropout variance | General use |
+| `diversity` | Cluster-based coverage | Avoiding redundancy |
+| `hybrid` | Uncertainty + diversity | **Recommended** |
+| `qbc` | Committee disagreement | Robust uncertainty |
+
+### Usage
+
+```bash
+cd training
+
+# Hybrid strategy (recommended)
+python train_active_learning.py --strategy hybrid --budget 5000 --batch-size 100
+
+# Uncertainty sampling with more MC samples
+python train_active_learning.py --strategy uncertainty --mc-samples 30 --budget 10000
+
+# Compare strategies
+python train_active_learning.py --strategy random --budget 5000 --output-prefix al_random
+python train_active_learning.py --strategy hybrid --budget 5000 --output-prefix al_hybrid
+```
+
+### Key Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--strategy` | hybrid | Query strategy |
+| `--budget` | 5000 | Total experiments allowed |
+| `--batch-size` | 100 | Samples per AL round |
+| `--initial-size` | 1000 | Initial labeled pool |
+| `--mc-samples` | 20 | MC Dropout samples for uncertainty |
+
+### Output
+
+The script saves:
+- `models/active_learning_*.pt` - Trained model weights
+- `models/active_learning_history.json` - Learning curve data
 
 ## Demonstration Guide
 
