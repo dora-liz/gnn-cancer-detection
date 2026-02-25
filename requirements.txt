@@ -1,0 +1,21 @@
+# This file lists the Python package dependencies for this project.
+# It is generated to ensure reproducibility across environments.
+#
+# Special instructions for PyTorch and PyTorch Geometric:
+# To install PyTorch (CPU version) and ensure compatibility with PyG, use the following command:
+# pip install torch==2.4.0+cpu torchvision==0.19.0+cpu torchaudio==2.4.0+cpu --index-url https://download.pytorch.org/whl/cpu
+
+# Then, install PyTorch Geometric (CPU version) and its dependencies:
+# pip install pyg-lib torch-scatter torch-sparse torch-cluster torch-spline-conv -f https://data.pyg.org/whl/torch-2.4.0+cpu.html
+
+# pip install torch-geometric
+
+torch==2.4.0+cpu
+torchvision==0.19.0+cpu
+torchaudio==2.4.0+cpu
+torch-geometric==2.7.0
+pyg-lib==0.4.0+pt24cpu
+torch-scatter==2.1.2+pt24cpu
+torch-sparse==0.6.18+pt24cpu
+torch-cluster==1.6.3+pt24cpu
+torch-spline-conv==1.2.2+pt24cpu
