@@ -125,6 +125,84 @@ curl -X POST http://localhost:5000/predict \
      -d '{"gene_expression": [0.1, 0.2, ...]}'
 ```
 
+## Demonstration Guide
+
+### Quick Demo (5 minutes)
+
+**1. Test on a random cell line:**
+```bash
+cd evaluation
+python test_random_cell.py
+```
+
+This will:
+- Pick a random cell line from test data
+- Remove its known drug responses (simulating a "new" cell line)
+- Predict drug rankings
+- Compare with actual rankings (Spearman correlation)
+
+**2. Evaluate on multiple cell lines:**
+```bash
+python evaluate_model.py --num-cells-to-test 5
+```
+
+### Full Demo Workflow
+
+**Step 1: Show Dataset Statistics**
+```bash
+python -c "import torch; d=torch.load('data/processed/gdsc_processed_train.pt', weights_only=False); print(f'Cell lines: {d[\"cell_line\"].x.shape[0]}'); print(f'Drugs: {d[\"drug\"].x.shape[0]}'); print(f'Gene features: {d[\"cell_line\"].x.shape[1]}')"
+```
+
+**Step 2: Generate Sample Input & Get Drug Rankings**
+```bash
+cd inference
+
+# Extract a cell line from test data
+python generate_sample_input.py --from-existing ../data/processed/gdsc_processed_test.pt --output demo_cell.pt
+
+# Get drug rankings
+python predict_drugs.py --input demo_cell.pt --top-k 20 --output demo_results.json
+```
+
+**Step 3: Show Explainability (which genes influenced the prediction)**
+```bash
+python predict_drugs.py --input demo_cell.pt --explain --top-k 5
+```
+
+### Key Metrics to Present
+
+| Metric | Value | Meaning |
+|--------|-------|---------|
+| **Top-10 Precision** | ~39% | 4 of top 10 predicted drugs are actually in top 10 |
+| **Spearman Correlation** | ~0.35 | Moderate ranking agreement with ground truth |
+| **Cell Lines** | 912 | Cancer cell lines in training data |
+| **Drugs** | 542 | Compounds that can be ranked |
+| **Interactions** | 434K | Drug-cell line IC50 measurements |
+
+### What Each Component Does
+
+| Component | Purpose |
+|-----------|---------|
+| **Gene Expression Input** | 17,737 features from RNA-seq representing cell state |
+| **FeatureProjector** | Compresses genes to 256-dim learned representation |
+| **GraphSAGE GNN** | Learns patterns from cell-drug interaction graph |
+| **LinkPredictor** | Predicts IC50 (lower = more effective drug) |
+
+### Real-World Use Case
+
+> "Given a patient's tumor gene expression profile, the model ranks 542 cancer drugs by predicted effectiveness, helping oncologists prioritize which drugs to test first."
+
+### API Demo (Optional)
+
+```bash
+# Terminal 1: Start server
+cd api
+python api_server.py
+
+# Terminal 2: Send request
+python example_client.py
+```
+
 ## License
 
 MIT License
