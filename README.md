@@ -36,20 +36,15 @@ This project uses a heterogeneous Graph Neural Network to predict IC50 (drug eff
 │
 ├── inference/              # Drug ranking for new cell lines
 │   ├── predict_drugs.py    # Main prediction script (multiple input formats)
-│   ├── rank_drugs.py       # Alternative ranking script
+│   ├── rank_drugs.py       # Alternative ranking script with explainability
+│   ├── explain_gnn_prediction.py  # Feature importance analysis
 │   └── generate_sample_input.py  # Generate sample input files
 │
-├── api/                    # REST API deployment
-│   ├── api_server.py       # Flask API server
-│   ├── example_client.py   # API client example
-│   ├── Dockerfile          # Docker container
-│   └── DEPLOYMENT_README.md
-│
-├── data/                   # Data directory
+├── data/                   # Data directory (not in repo, generate locally)
 │   ├── raw/                # Raw GDSC files (download separately)
 │   └── processed/          # Processed PyTorch data (generated)
 │
-└── models/                 # Trained model weights (generated)
+└── models/                 # Trained model weights (generated locally)
 ```
 
 ## Quick Start
@@ -118,20 +113,6 @@ The model expects gene expression values for 17,737 genes. Supported formats:
 - `.json` - JSON array of floats
 - `.csv` - Comma-separated values
 
-## API Usage
-
-```bash
-cd api
-python api_server.py
-```
-
-Then send POST requests:
-```bash
-curl -X POST http://localhost:5000/predict \
-     -H "Content-Type: application/json" \
-     -d '{"gene_expression": [0.1, 0.2, ...]}'
-```
-
 ## Active Learning
 
 Active learning reduces the number of expensive drug-cell experiments needed by intelligently selecting which pairs to test next.
@@ -186,6 +167,35 @@ The script saves:
 
 ## Demonstration Guide
 
+### Prerequisites After Cloning
+
+After cloning the repository, you need to set up the data and models:
+
+```bash
+# 1. Clone the repo
+git clone <repository-url>
+cd finalproject
+
+# 2. Create and activate virtual environment
+python -m venv .venv
+.venv\Scripts\activate  # Windows
+# source .venv/bin/activate  # Linux/Mac
+
+# 3. Install dependencies (see Quick Start section above)
+
+# 4. Download GDSC data files to data/raw/ (see "Download Data" section)
+
+# 5. Preprocess data
+cd preprocessing
+python preprocess_gdsc.py
+cd ..
+
+# 6. Train the model (takes ~10-30 minutes depending on hardware)
+cd training
+python train.py --epochs 100 --patience 15
+cd ..
+```
+
 ### Quick Demo (5 minutes)
 
 **1. Test on a random cell line:**
@@ -225,7 +235,7 @@ python predict_drugs.py --input demo_cell.pt --top-k 20 --output demo_results.js
 
 **Step 3: Show Explainability (which genes influenced the prediction)**
 ```bash
-python predict_drugs.py --input demo_cell.pt --explain --top-k 5
+python rank_drugs.py --cell-features demo_cell.pt --top-k 10 --explain-top-features 10
 ```
 
 ### Key Metrics to Present
@@ -250,17 +260,6 @@ python predict_drugs.py --input demo_cell.pt --explain --top-k 5
 ### Real-World Use Case
 
 > "Given a patient's tumor gene expression profile, the model ranks 542 cancer drugs by predicted effectiveness, helping oncologists prioritize which drugs to test first."
-
-### API Demo (Optional)
-
-```bash
-# Terminal 1: Start server
-cd api
-python api_server.py
-
-# Terminal 2: Send request
-python example_client.py
-```
 
 ## License
 
