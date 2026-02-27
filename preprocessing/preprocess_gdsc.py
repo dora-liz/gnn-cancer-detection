@@ -53,10 +53,35 @@ def load_expression_data(path: str):
     
     # Read the expression file (genes as rows, cell lines as columns)
     df = pd.read_csv(path, sep='\t', index_col=0)
-    
     # Remove GENE_title column if present
     if 'GENE_title' in df.columns:
         df = df.drop(columns=['GENE_title'])
+    # Normalize gene expression features (z-score)
+    df = (df - df.mean()) / df.std()
+
+
+    # LASSO feature selection: select informative genes
+    from sklearn.linear_model import LassoCV
+    X = df.T.values  # cell lines x genes
+    y = np.random.rand(X.shape[0])  # Dummy target (replace with real IC50 if available)
+    lasso = LassoCV(cv=3, random_state=42, max_iter=1000)
+    lasso.fit(X, y)
+    coef = lasso.coef_
+    selected_genes = np.where(np.abs(coef) > 1e-4)[0]
+    if len(selected_genes) == 0:
+        print("[WARNING] LASSO selected 0 features. Falling back to all features.")
+        df_selected = df
+    else:
+        print(f"[INFO] LASSO selected {len(selected_genes)} features.")
+        df_selected = df.iloc[selected_genes, :]
+
+    # Reduce dimensionality with PCA (retain up to 100 components, but not more than available features)
+    from sklearn.decomposition import PCA
+    n_selected = df_selected.shape[0]
+    n_components = min(100, n_selected) if n_selected > 0 else 1
+    pca = PCA(n_components=n_components, random_state=42)
+    df_pca = pd.DataFrame(pca.fit_transform(df_selected.T), index=df.columns)
+    return df_pca, df_pca.shape[1]
     
     # Column names are like "DATA.906826" or "DATA.1503362.1" => extract COSMIC IDs
     cosmic_to_features = {}

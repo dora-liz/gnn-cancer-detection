@@ -72,19 +72,20 @@ class GNN(nn.Module):
         out_channels: int = 16,
         dropout: float = 0.3,
         num_layers: int = 3,
+        heads: int = 4,
     ):
         super().__init__()
         self.num_layers = num_layers
         self.convs = nn.ModuleList()
         self.dropout = nn.Dropout(dropout)
-        
+        from torch_geometric.nn import GATConv
         # First layer
-        self.convs.append(SAGEConv((-1, -1), hidden_channels))
+        self.convs.append(GATConv((-1, -1), hidden_channels, heads=heads, concat=True, add_self_loops=False))
         # Hidden layers
         for _ in range(num_layers - 2):
-            self.convs.append(SAGEConv((-1, -1), hidden_channels))
+            self.convs.append(GATConv((-1, -1), hidden_channels, heads=heads, concat=True, add_self_loops=False))
         # Output layer
-        self.convs.append(SAGEConv((-1, -1), out_channels))
+        self.convs.append(GATConv((-1, -1), out_channels, heads=1, concat=False, add_self_loops=False))
 
     def forward(self, x, edge_index):
         for i, conv in enumerate(self.convs[:-1]):

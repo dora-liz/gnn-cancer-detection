@@ -15,9 +15,12 @@ from typing import Dict, List, Tuple
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+
 import torch
 from torch_geometric.data import HeteroData
 from torch_geometric.nn import to_hetero
+import numpy as np
+import matplotlib.pyplot as plt
 
 from gnn_model import GNN, LinkPredictor, FeatureProjector
 
@@ -135,13 +138,12 @@ def rank_drugs(projector, model, decoder, graph, new_cell_index: int) -> torch.T
     projector.eval()
     model.eval()
     decoder.eval()
-    with torch.no_grad():
-        proj_x = projector(graph.x_dict)
-        emb = model(proj_x, graph.edge_index_dict)
-        new_cell_emb = emb["cell_line"][new_cell_index].unsqueeze(0)
-        drug_emb = emb["drug"]
-        repeated_cell = new_cell_emb.repeat(drug_emb.shape[0], 1)
-        preds = decoder(repeated_cell, drug_emb)
+    proj_x = projector(graph.x_dict)
+    emb = model(proj_x, graph.edge_index_dict)
+    new_cell_emb = emb["cell_line"][new_cell_index].unsqueeze(0)
+    drug_emb = emb["drug"]
+    repeated_cell = new_cell_emb.repeat(drug_emb.shape[0], 1)
+    preds = decoder(repeated_cell, drug_emb)
     return preds
 
 
@@ -155,9 +157,11 @@ def explain_top_drug(
     base_cell_count: int,
 ):
     """Compute input×gradient attribution on the new cell line's raw features."""
+    # Set requires_grad on the raw input features
+    raw_input = new_cell_features.clone().detach().requires_grad_(True)
     explain_graph = graph.clone()
     explain_graph["cell_line"].x = explain_graph["cell_line"].x.clone().detach()
-    explain_graph["cell_line"].x.requires_grad_(True)
+    explain_graph["cell_line"].x[base_cell_count] = raw_input
 
     projector.zero_grad(set_to_none=True)
     model.zero_grad(set_to_none=True)
@@ -170,11 +174,25 @@ def explain_top_drug(
     pred = decoder(new_cell_emb, drug_emb).squeeze()
     pred.backward()
 
-    grad = explain_graph["cell_line"].x.grad[base_cell_count]
-    inp = new_cell_features.squeeze(0)
-    attribution = (grad * inp).abs()
+    grad = raw_input.grad.squeeze(0) if raw_input.grad is not None else torch.zeros_like(raw_input.squeeze(0))
+    inp = raw_input.squeeze(0)
+    saliency = grad.abs().detach().cpu()
+    input_x_grad = (grad.detach() * inp.detach()).abs().cpu()
+    return pred.detach().item(), saliency, input_x_grad
 
-    return pred.detach().item(), attribution.detach().cpu()
+
+def plot_feature_importance(gene_names, saliency, input_x_grad):
+    indices = np.arange(len(gene_names))
+    plt.figure(figsize=(10, 6))
+    plt.bar(indices - 0.2, saliency, width=0.4, label='Saliency')
+    plt.bar(indices + 0.2, input_x_grad, width=0.4, label='Input x Gradient')
+    plt.xticks(indices, gene_names, rotation=45, ha='right')
+    plt.xlabel('Gene')
+    plt.ylabel('Importance')
+    plt.title('Top Feature Importances for Cell-Drug Pair')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
 
 def main():
@@ -210,7 +228,7 @@ def main():
     drug_names = get_drug_names(int(preds.shape[0]), args.drug_names)
 
     top_drug_idx = int(ranked_idx[0].item())
-    top_pred, attributions = explain_top_drug(
+    top_pred, saliency, input_x_grad = explain_top_drug(
         projector=projector,
         model=model,
         decoder=decoder,
@@ -220,9 +238,12 @@ def main():
         base_cell_count=base_graph["cell_line"].x.shape[0],
     )
 
-    explain_k = min(args.explain_top_features, attributions.shape[0])
-    feat_idx = torch.argsort(attributions, descending=True)[:explain_k]
+    explain_k = min(args.explain_top_features, input_x_grad.shape[0])
+    feat_idx = torch.argsort(input_x_grad, descending=True)[:explain_k]
 
+    gene_names = [f"Gene_{fi}" for fi in feat_idx.tolist()]
+    saliency_vals = [float(saliency[fi].item()) for fi in feat_idx.tolist()]
+    input_x_grad_vals = [float(input_x_grad[fi].item()) for fi in feat_idx.tolist()]
     ranking = []
     for i, idx in enumerate(ranked_idx.tolist(), start=1):
         ranking.append(
@@ -234,21 +255,32 @@ def main():
             }
         )
 
+    print("\nDrug Ranking (Top 10):")
+    for r in ranking[:10]:
+        print(f"#{r['rank']}: {r['drug_name']} (pred logIC50={r['predicted_effect_ic50']:.4f})")
+
+    print("\nFeature Importance (Top 10 for top drug):")
+    for g, s, xg in zip(gene_names, saliency_vals, input_x_grad_vals):
+        print(f"{g}: saliency={s:.6f}, input_x_grad={xg:.6f}")
+
+    print("\nVisualisation:")
+    plot_feature_importance(gene_names, saliency_vals, input_x_grad_vals)
+
     explanation = {
         "top_drug_index": top_drug_idx,
         "top_drug_name": drug_names[top_drug_idx],
         "top_drug_predicted_effect_ic50": float(top_pred),
-        "method": "input_x_gradient_on_new_cell_features",
-        "interpretation": (
-            "Lower IC50 = stronger drug effect. "
-            "Feature attributions show which cell line gene expression features "
-            "most influenced the predicted sensitivity to the top-ranked drug."
-        ),
-        "top_feature_attributions": [
-            {"feature_index": int(fi), "importance": float(attributions[fi].item())}
-            for fi in feat_idx.tolist()
-        ],
-    }
+            "method": "saliency_and_input_x_gradient_on_new_cell_features",
+            "interpretation": (
+                "Lower IC50 = stronger drug effect. "
+                "Feature attributions show which cell line gene expression features "
+                "most influenced the predicted sensitivity to the top-ranked drug."
+            ),
+            "top_feature_attributions": [
+                {"feature_index": int(fi), "saliency": float(saliency[fi].item()), "input_x_grad": float(input_x_grad[fi].item())}
+                for fi in feat_idx.tolist()
+            ],
+        }
 
     output = {
         "num_drugs_scored": int(preds.shape[0]),

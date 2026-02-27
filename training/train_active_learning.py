@@ -68,11 +68,11 @@ def parse_args():
     # Active learning settings
     p.add_argument("--strategy", choices=["uncertainty", "qbc", "diversity", "hybrid", "random"],
                    default="hybrid", help="Query strategy")
-    p.add_argument("--budget", type=int, default=5000, 
+    p.add_argument("--budget", type=int, default=10000, 
                    help="Total labeling budget (number of experiments)")
     p.add_argument("--batch-size", type=int, default=100,
                    help="Number of samples to query per round")
-    p.add_argument("--initial-size", type=int, default=1000,
+    p.add_argument("--initial-size", type=int, default=5000,
                    help="Initial labeled pool size")
     p.add_argument("--mc-samples", type=int, default=20,
                    help="Number of MC Dropout samples for uncertainty")
